@@ -99,6 +99,7 @@ static const MemMapEntry virt_memmap[] = {
     [VIRT_APLIC_M] =      {  0xc000000, APLIC_SIZE(VIRT_CPUS_MAX) },
     [VIRT_APLIC_S] =      {  0xd000000, APLIC_SIZE(VIRT_CPUS_MAX) },
     [VIRT_UART0] =        { 0x10000000,         0x100 },
+    [VIRT_UART1] =        { 0x10000500,         0x100 },
     [VIRT_VIRTIO] =       { 0x10001000,        0x1000 },
     [VIRT_FW_CFG] =       { 0x10100000,          0x18 },
     [VIRT_RPMI_SHMEM] =    { 0x10200000,      0x20000 },
@@ -970,7 +971,7 @@ static void create_fdt_reset(RISCVVirtState *s, const MemMapEntry *memmap,
     g_free(name);
 }
 
-static void create_fdt_uart(RISCVVirtState *s, const MemMapEntry *memmap,
+static void create_fdt_uart0(RISCVVirtState *s, const MemMapEntry *memmap,
                             uint32_t irq_mmio_phandle)
 {
     g_autofree char *name = NULL;
@@ -982,12 +983,35 @@ static void create_fdt_uart(RISCVVirtState *s, const MemMapEntry *memmap,
     qemu_fdt_setprop_cells(ms->fdt, name, "reg",
         0x0, memmap[VIRT_UART0].base,
         0x0, memmap[VIRT_UART0].size);
-    qemu_fdt_setprop_cell(ms->fdt, name, "clock-frequency", 3686400);
+    qemu_fdt_setprop_cell(ms->fdt, name, "clock-frequency", 115200);
     qemu_fdt_setprop_cell(ms->fdt, name, "interrupt-parent", irq_mmio_phandle);
     if (s->aia_type == VIRT_AIA_TYPE_NONE) {
         qemu_fdt_setprop_cell(ms->fdt, name, "interrupts", UART0_IRQ);
     } else {
         qemu_fdt_setprop_cells(ms->fdt, name, "interrupts", UART0_IRQ, 0x4);
+    }
+
+    qemu_fdt_setprop_string(ms->fdt, "/chosen", "stdout-path", name);
+}
+
+static void create_fdt_uart1(RISCVVirtState *s, const MemMapEntry *memmap,
+    uint32_t irq_mmio_phandle)
+{
+    g_autofree char *name = NULL;
+    MachineState *ms = MACHINE(s);
+
+    name = g_strdup_printf("/soc/serial@%lx", (long)memmap[VIRT_UART1].base);
+    qemu_fdt_add_subnode(ms->fdt, name);
+    qemu_fdt_setprop_string(ms->fdt, name, "compatible", "ns16550a");
+    qemu_fdt_setprop_cells(ms->fdt, name, "reg",
+    0x0, memmap[VIRT_UART1].base,
+    0x0, memmap[VIRT_UART1].size);
+    qemu_fdt_setprop_cell(ms->fdt, name, "clock-frequency", 115200);
+    qemu_fdt_setprop_cell(ms->fdt, name, "interrupt-parent", irq_mmio_phandle);
+    if (s->aia_type == VIRT_AIA_TYPE_NONE) {
+    qemu_fdt_setprop_cell(ms->fdt, name, "interrupts", UART1_IRQ);
+    } else {
+    qemu_fdt_setprop_cells(ms->fdt, name, "interrupts", UART1_IRQ, 0x4);
     }
 
     qemu_fdt_setprop_string(ms->fdt, "/chosen", "stdout-path", name);
@@ -1578,7 +1602,8 @@ static void finalize_fdt(RISCVVirtState *s)
     create_fdt_pcie(s, virt_memmap, irq_pcie_phandle, msi_pcie_phandle,
                     iommu_sys_phandle);
 
-    create_fdt_uart(s, virt_memmap, irq_mmio_phandle);
+    create_fdt_uart0(s, virt_memmap, irq_mmio_phandle);
+    create_fdt_uart1(s, virt_memmap, irq_mmio_phandle);
 
     create_fdt_rtc(s, virt_memmap, irq_mmio_phandle);
 
@@ -2243,8 +2268,12 @@ static void virt_machine_init(MachineState *machine)
     create_platform_bus(s, mmio_irqchip);
 
     serial_mm_init(system_memory, memmap[VIRT_UART0].base,
-        0, qdev_get_gpio_in(mmio_irqchip, UART0_IRQ), 399193,
+        0, qdev_get_gpio_in(mmio_irqchip, UART0_IRQ), 115200,
         serial_hd(0), DEVICE_LITTLE_ENDIAN);
+
+    serial_mm_init(system_memory, memmap[VIRT_UART1].base,
+        0, qdev_get_gpio_in(mmio_irqchip, UART1_IRQ), 115200,
+        serial_hd(1), DEVICE_LITTLE_ENDIAN);
 
     sysbus_create_simple("goldfish_rtc", memmap[VIRT_RTC].base,
         qdev_get_gpio_in(mmio_irqchip, RTC_IRQ));
